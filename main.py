@@ -1,390 +1,237 @@
+#!/usr/bin/env python3
+"""
+Name: Your Name
+Email: your.email@example.com
+
+CSC242: Intro to AI – Project 2: Constraint Satisfaction (Sudoku Solver)
+
+This program reads a 9x9 Sudoku puzzle from standard input (with 0 representing an empty cell),
+applies AC-3 constraint propagation followed by backtracking search with MRV and LCV heuristics,
+and then outputs a solved puzzle (or "No solution." if none exists).
+"""
+
+import sys
+import copy
+from collections import deque
 import numpy as np
 
-class SudokuBoard():
 
+class SudokuBoard:
     def __init__(self, input_grid: list[list[int]]):
-        '''
-            Initializes our Sudoku Board
-
-            params:
-                input_grid: list[list[int]] - A 2D list representing the initial state of the board.
-        '''
-        self.size = 9
+        self.size: int = 9
         self.subgrid_size: int = 3
-        self.grid = np.array(input_grid)
-        self.constraints = self._generate_constraints()
-
-        # init domains as a 2D list of sets
-        self.domains = [[set() for _ in range(self.size)] for _ in range(self.size)]
-        for row in range(self.size):
-            for col in range(self.size):
-                if input_grid[row][col] == 0:
-                    self.domains[row][col] = set(range(1, 10))
-                else:
-                    self.domains[row][col] = {input_grid[row][col]}
-
-
-    def revise(self, row1: int, col1: int, row2: int, col2: int) -> bool:
-        """
-        Removes values from (row1, col1) that do not satisfy constraints with (row2, col2).
-        Returns True if domain is revised, False otherwise.
-        """
-        revised = False
-        to_remove = set()
-
-        for value in self.domains[row1][col1]:
-            # If (row2, col2) has only one value and it's in (row1, col1), remove it
-            if len(self.domains[row2][col2]) == 1 and value in self.domains[row2][col2]:
-                to_remove.add(value)
-
-        if to_remove:
-            self.domains[row1][col1] -= to_remove  # Remove invalid values
-            revised = True
-
-        return revised
-
-
-    def _generate_constraints(self) -> set[tuple[int, int]]:
-        # TODO: horrible time complexity...any way to optimize this?
-        '''
-            Internal method to help construct tthe constraints for the board.
-            Our constraint provides a set of tuples, where each tuple represents a pair of cells that
-            cannot share the same value
-
-            params:
-                None
-
-            returns:
-                set[tuple[int, int]] - A set of tuples representing the constraints of the board.
-        '''
-
-        constraints = set()
-
-        for row in range(self.size):
-            for col in range(self.size):
-
-                #row constraints
-                for r in range(self.size):
-                    if r != row:
-                        constraints.add(((row, col), (r, col)))
-
-                #column constraints
-                for c in range(self.size):
-                    if c != col:
-                        constraints.add(((row, col), (row, c)))
-
-                #subgrid constraints
-                start_row = (row // self.subgrid_size) * self.subgrid_size
-                start_col = (col // self.subgrid_size) * self.subgrid_size
-                for r in range(start_row, start_row + self.subgrid_size):
-                    for c in range(start_col, start_col + self.subgrid_size):
-                        if (r, c) != (row, col):
-                            constraints.add(((row, col), (r, c)))
-
-        return constraints
+        # Make a copy of the input grid
+        self.grid: list[list[int]] = [row[:] for row in input_grid]
+        # Initialize domains: if cell is 0, its domain is {1,...,9}; otherwise, it's the singleton of its value.
+        self.domains: list[list[set[int]]] = [
+            [set(range(1, 10)) if self.grid[r][c] == 0 else {self.grid[r][c]}
+             for c in range(self.size)]
+            for r in range(self.size)
+        ]
+        # Precompute neighbors for each cell (same row, same column, same subgrid)
+        self.neighbors: dict[tuple[int, int], set[tuple[int, int]]] = {}
+        for r in range(self.size):
+            for c in range(self.size):
+                nbs = set()
+                # Same row
+                for cc in range(self.size):
+                    if cc != c:
+                        nbs.add((r, cc))
+                # Same column
+                for rr in range(self.size):
+                    if rr != r:
+                        nbs.add((rr, c))
+                # Same subgrid
+                br = (r // self.subgrid_size) * self.subgrid_size
+                bc = (c // self.subgrid_size) * self.subgrid_size
+                for rr in range(br, br + self.subgrid_size):
+                    for cc in range(bc, bc + self.subgrid_size):
+                        if (rr, cc) != (r, c):
+                            nbs.add((rr, cc))
+                self.neighbors[(r, c)] = nbs
 
     def is_complete(self) -> bool:
-        """
-            This method DOES NOT return if the board is currently solved rather
-            it simply indicates if every position is occupied and hence the board
-            is complete.
-
-            params:
-                None
-
-            returns:
-                bool - True if the board is complete, False otherwise.
-        """
-        return not np.any(self.grid == 0)
+        """A board is complete if every cell is assigned (i.e. grid value nonzero) and its domain is a singleton."""
+        for r in range(self.size):
+            for c in range(self.size):
+                if self.grid[r][c] == 0 or len(self.domains[r][c]) != 1:
+                    return False
+        return True
 
     def is_valid_assignment(self, row: int, col: int, value: int) -> bool:
-        """
-            This method checks if the proposed assignment (from the params)
-            is a valid assignment for the given position.
-
-            params:
-                row: int - The row of the cell to check
-                col: int - The column of the cell to check
-                value: int - The value to check
-
-            returns:
-                bool - True if the assignment is valid, False otherwise
-        """
-        ##check if row assignment is valid
-        if value in self.grid[row]:
-            return False
-        ##check if column assignment is valid
-        if value in self.grid[:, col]:
-            return False
-
-        ##check if subgrid assignment is valid
-        start_row = (row // self.subgrid_size) * self.subgrid_size
-        start_col = (col // self.subgrid_size) * self.subgrid_size
-        if value in self.grid[start_row:start_row+self.subgrid_size, start_col:start_col+self.subgrid_size]:
-            return False
-        
+        """Checks whether placing 'value' at (row, col) conflicts with any assigned value in the same row, column, or subgrid."""
+        # Check row
+        for c in range(self.size):
+            if self.grid[row][c] == value:
+                return False
+        # Check column
+        for r in range(self.size):
+            if self.grid[r][col] == value:
+                return False
+        # Check subgrid
+        br = (row // self.subgrid_size) * self.subgrid_size
+        bc = (col // self.subgrid_size) * self.subgrid_size
+        for r in range(br, br + self.subgrid_size):
+            for c in range(bc, bc + self.subgrid_size):
+                if self.grid[r][c] == value:
+                    return False
         return True
 
     def assign_value(self, row: int, col: int, value: int) -> None:
-        """
-            Assigns a value to a given cell in the grid.
-
-            params:
-                row: int - The row of the cell to assign
-                col: int - The column of the cell to assign
-                value: int - The value to assign
-
-            returns:
-                None
-        """
-
-        # update value on the grid 
+        """Assigns 'value' to cell (row, col) and updates its domain."""
         self.grid[row][col] = value
-
-        # update domain of the cell
         self.domains[row][col] = {value}
 
-        # remove value from 'peer' cells
-        for (r, c) in self._get_peers(row, col):
-            self.domains[r][c].discard(value)
-
-        return
-    
-    def _get_peers(self, row: int, col: int) -> set[tuple[int, int]]:
-        """
-            This methods all boxes that are in the same row, column and grid of the
-            specified position. This in essence is collecting all of the values that
-            can restrict the value of the specified position.
-        """
-        peers = set()
-
-        # Row and Column peers
-        for i in range(self.size):
-            if i != col:
-                peers.add((row, i))
-            if i != row:
-                peers.add((i, col))
-
-        # Subgrid peers
-        start_row, start_col = (row // self.subgrid_size) * self.subgrid_size, (col // self.subgrid_size) * self.subgrid_size
-        for r in range(start_row, start_row + self.subgrid_size):
-            for c in range(start_col, start_col + self.subgrid_size):
-                if (r, c) != (row, col):
-                    peers.add((r, c))
-
-        return peers
-
     def remove_value(self, row: int, col: int) -> None:
-        """
-            This method restores teh value of the specified cell to
-            0 and restores the domain of that position as well.
+        """Removes the assignment at cell (row, col) and resets its domain."""
+        self.grid[row][col] = 0
+        self.domains[row][col] = set(range(1, 10))
 
-            params:
-                row: int - The row of the cell to remove
-                col: int - The column of the cell to remove
-
-            returns:
-                None
-        """
-        self.grid[row, col] = 0 
-
-        # Restore possible values (1-9) minus currently assigned numbers in peers
-        possible_values = set(range(1, 10))
-        for (r, c) in self._get_peers(row, col):
-            possible_values.discard(self.grid[r, c])
-        
-        self.domains[row][col] = possible_values
-
-        return
-    
-    def is_valid_board(self) -> bool:
-        """
-        HELPER METHOD FOR TESTING ONLY
-        Checks if the current Sudoku board is valid (i.e., no duplicate values in rows, columns, or subgrids).
-
-        Returns:
-            bool: True if the board is valid, False otherwise.
-        """
-        # Check rows
-        for row in range(self.size):
-            row_values = [self.grid[row, col] for col in range(self.size) if self.grid[row, col] != 0]
-            if len(set(row_values)) != len(row_values):  # Duplicates found
-                return False
-
-        # Check columns
-        for col in range(self.size):
-            col_values = [self.grid[row, col] for row in range(self.size) if self.grid[row, col] != 0]
-            if len(set(col_values)) != len(col_values):  # Duplicates found
-                return False
-
-        # Check 3x3 subgrids
-        for start_row in range(0, self.size, self.subgrid_size):
-            for start_col in range(0, self.size, self.subgrid_size):
-                subgrid_values = []
-                for r in range(start_row, start_row + self.subgrid_size):
-                    for c in range(start_col, start_col + self.subgrid_size):
-                        if self.grid[r, c] != 0:
-                            subgrid_values.append(self.grid[r, c])
-                if len(set(subgrid_values)) != len(subgrid_values):  # Duplicates found
-                    return False
-
-        return True  # If all checks pass, the board is valid
+    def display_board(self) -> None:
+        """Prints the board in the required 9-line, 9-token-per-line format."""
+        for row in self.grid:
+            print(" ".join(str(x) for x in row))
 
 
-def ac3(board: SudokuBoard) -> bool:
+def revise(board: SudokuBoard, cell1: tuple[int, int], cell2: tuple[int, int]) -> bool:
+    """Revise the domain of cell1 with respect to cell2.
+    Remove any value from cell1's domain if cell2 is assigned that value.
     """
-        TODO: write a description of this method
-    """
-    queue = list(board.constraints)
-
-    while queue:
-        (cell1, cell2) = queue.pop(0)
-        row1, col1 = cell1
-        row2, col2 = cell2
-
-        if board.revise(row1, col1, row2, col2):
-            if not board.domains[row1][col1]:  # If domain is empty, failure
-                return False
-            for peer in board._get_peers(row1, col1):
-                queue.append((peer, (row1, col1)))
-
-    return True
-
-
-def revise(self, row1: int, col1: int, row2: int, col2: int) -> bool:
-    """
-        # TODO: write a description of this method
-    """
+    r1, c1 = cell1
+    r2, c2 = cell2
     revised = False
     to_remove = set()
-
-    for value in self.domains[row1][col1]:
-        if len(self.domains[row2][col2]) == 1 and value in self.domains[row2][col2]:
-            to_remove.add(value)
-
+    # If cell2's domain is a singleton, then its value cannot appear in cell1.
+    if len(board.domains[r2][c2]) == 1:
+        value = next(iter(board.domains[r2][c2]))
+        for v in board.domains[r1][c1]:
+            if v == value:
+                to_remove.add(v)
     if to_remove:
-        self.domains[row1][col1] -= to_remove
+        board.domains[r1][c1] -= to_remove
         revised = True
-
     return revised
 
 
+def ac3(board: SudokuBoard) -> bool:
+    """Applies the AC-3 algorithm to enforce arc consistency across the board.
+    Returns False if any domain becomes empty, True otherwise.
+    """
+    queue = deque()
+    # Initialize the queue with all arcs: (cell, neighbor)
+    for r in range(board.size):
+        for c in range(board.size):
+            for neighbor in board.neighbors[(r, c)]:
+                queue.append(((r, c), neighbor))
+    while queue:
+        (r, c), (r2, c2) = queue.popleft()
+        if revise(board, (r, c), (r2, c2)):
+            if not board.domains[r][c]:
+                return False
+            for neighbor in board.neighbors[(r, c)]:
+                if neighbor != (r2, c2):
+                    queue.append((neighbor, (r, c)))
+    return True
+
+
 def get_unassigned_variable(board: SudokuBoard) -> tuple[int, int] | None:
-    """
-        TODO: write a description of this method
-
-        uses the minimum remaining values heuristic
-    """
-    min_domain_size = float('inf')
-    best_cell = None
-
-    for row in range(board.size):
-        for col in range(board.size):
-            if board.grid[row, col] == 0:  # Unassigned cell
-                domain_size = len(board.domains[row][col])
-                if domain_size < min_domain_size:
-                    min_domain_size = domain_size
-                    best_cell = (row, col)
-
-    return best_cell
+    """Selects an unassigned cell using the Minimum Remaining Values (MRV) heuristic."""
+    min_len = 10  # larger than the maximum domain size of 9
+    chosen = None
+    for r in range(board.size):
+        for c in range(board.size):
+            if board.grid[r][c] == 0:
+                d_len = len(board.domains[r][c])
+                if d_len < min_len:
+                    min_len = d_len
+                    chosen = (r, c)
+    return chosen
 
 
 def get_sorted_domain_values(board: SudokuBoard, row: int, col: int) -> list[int]:
-    """
-        TODO: write a description of this method
-        Returns a list of values in the domain of (row, col), sorted by the Least Constraining Value (LCV) heuristic.
-        The LCV heuristic prefers values that minimize constraints on neighboring cells.
-    """
-    def _count_conflicts(value: int) -> int:
-        """
-        TODO: write a description of this method
-            Helper function that counts how many values would be removed from the domains
-            of peers if we assigned 'value' to (row, col).
-        """
-        conflicts = 0
-        for (r, c) in board._get_peers(row, col):
-            if value in board.domains[r][c]:
-                conflicts += 1
-        return conflicts
+    """Returns the domain values for (row, col) ordered by the Least Constraining Value (LCV) heuristic."""
+    values = list(board.domains[row][col])
 
-    # Get all possible values and sort them based on the number of conflicts they cause
-    return sorted(board.domains[row][col], key=_count_conflicts)
+    def count_conflicts(value: int) -> int:
+        count = 0
+        for (r, c) in board.neighbors[(row, col)]:
+            if value in board.domains[r][c]:
+                count += 1
+        return count
+
+    return sorted(values, key=count_conflicts)
 
 
 def backtrack(board: SudokuBoard) -> bool:
-    """
-        TODO: write a description of this method
+    """Performs backtracking search to complete the board.
+    Returns True if a complete solution is found; otherwise, returns False.
     """
     if board.is_complete():
-        return True  # Solved
+        return True
 
-    row, col = get_unassigned_variable(board)
-    
-    # Use LCV heuristic
+    var = get_unassigned_variable(board)
+    if var is None:
+        return False
+    row, col = var
+
     for value in get_sorted_domain_values(board, row, col):
         if board.is_valid_assignment(row, col, value):
+            # Save the current state so we can backtrack later.
+            old_grid = copy.deepcopy(board.grid)
+            old_domains = copy.deepcopy(board.domains)
+
             board.assign_value(row, col, value)
-
-            if backtrack(board):  # Recursion
-                return True  # Success
-
-            board.remove_value(row, col)  # Undo if failure
-
-    return False  # No solution found
+            # Inference: enforce AC-3 after the assignment.
+            if ac3(board):
+                if backtrack(board):
+                    return True
+            # Backtrack: revert to the previous state.
+            board.grid = old_grid
+            board.domains = old_domains
+    return False
 
 
 def read_input() -> list[list[int]]:
+    """Reads a 9x9 Sudoku puzzle from standard input.
+    Each of the 9 lines should contain 9 digits (0-9) separated by spaces.
     """
-    Reads a 9x9 Sudoku grid from standard input using the built-in input() function.
-
-    Returns:
-        A list of lists (9x9) containing the Sudoku puzzle, where 0 represents an empty cell.
-    """
-    input_grid = []
-    input("Press Enter to start entering the Sudoku puzzle...")
-
-    for _ in range(9):  # Read exactly 9 lines
-        line = input().strip()  # Explicit prompt for clarity
-        input_grid.append(list(map(int, line.split())))  # Convert to list of integers
-    
-    return input_grid
+    grid = []
+    for _ in range(9):
+        line = sys.stdin.readline().strip()
+        if not line:
+            break
+        row = list(map(int, line.split()))
+        grid.append(row)
+    return grid
 
 
 def write_output(board: SudokuBoard) -> None:
-    """
-        TODO: write a description of this method
-    """
-    print(board.is_valid_board())
+    """Outputs the solved board or 'No solution.' if the board is incomplete."""
     if board.is_complete():
-        for row in board.grid:
-            print(" ".join(map(str, row)))  # Convert row to space-separated string
+        board.display_board()
     else:
         print("No solution.")
+
 
 def main():
     """
     General Pipeline:
-    - Read input. (read_input())
-    - Initialize board. (SudokuBoard)
-    - Apply AC-3. (ac3(board))
-    - Use backtracking search. (backtrack(board))
-    - Output solution. (write_output(board.grid))
+      1. Read input. (read_input())
+      2. Initialize board. (SudokuBoard)
+      3. Apply AC-3. (ac3(board))
+      4. Use backtracking search. (backtrack(board))
+      5. Output solution. (write_output(board))
     """
-    # Step 1: Read the puzzle input
-    input_grid = read_input()
-
-    # Step 2: Initialize the Sudoku board
-    board = SudokuBoard(input_grid)
-
-    # Step 3: Apply AC-3 to reduce domains
-    ac3(board)
-
-    # Step 4: If AC-3 didn't solve the puzzle, use backtracking
-    if not board.is_complete():
-        backtrack(board)
-
-    # Step 5: Output the result
+    grid = read_input()
+    board = SudokuBoard(grid)
+    if not ac3(board):
+        print("No solution.")
+        return
+    if not backtrack(board):
+        print("No solution.")
+        return
     write_output(board)
 
 
-main()
+if __name__ == '__main__':
+    main()
