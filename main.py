@@ -82,7 +82,32 @@ class SudokuBoard():
         return not np.any(self.grid == 0)
 
     def is_valid_assignment(self, row: int, col: int, value: int) -> bool:
-        pass
+        """
+            This method checks if the proposed assignment (from the params)
+            is a valid assignment for the given position.
+
+            params:
+                row: int - The row of the cell to check
+                col: int - The column of the cell to check
+                value: int - The value to check
+
+            returns:
+                bool - True if the assignment is valid, False otherwise
+        """
+        ##check if row assignment is valid
+        if value in self.grid[row]:
+            return False
+        ##check if column assignment is valid
+        if value in self.grid[:, col]:
+            return False
+
+        ##check if subgrid assignment is valid
+        start_row = (row // self.subgrid_size) * self.subgrid_size
+        start_col = (col // self.subgrid_size) * self.subgrid_size
+        if value in self.grid[start_row:start_row+self.subgrid_size, start_col:start_col+self.subgrid_size]:
+            return False
+        
+        return True
 
     def assign_value(self, row: int, col: int, value: int) -> None:
         pass
