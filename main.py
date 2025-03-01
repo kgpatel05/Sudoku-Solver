@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-Name: Your Name
-Email: your.email@example.com
-
-CSC242: Intro to AI – Project 2: Constraint Satisfaction (Sudoku Solver)
-
-This program reads a 9x9 Sudoku puzzle from standard input (with 0 representing an empty cell),
-applies AC-3 constraint propagation followed by backtracking search with MRV and LCV heuristics,
-and then outputs a solved puzzle (or "No solution." if none exists).
-"""
-
 import sys
 import copy
 from collections import deque
@@ -20,28 +8,23 @@ class SudokuBoard:
     def __init__(self, input_grid: list[list[int]]):
         self.size: int = 9
         self.subgrid_size: int = 3
-        # Make a copy of the input grid
         self.grid: list[list[int]] = [row[:] for row in input_grid]
-        # Initialize domains: if cell is 0, its domain is {1,...,9}; otherwise, it's the singleton of its value.
         self.domains: list[list[set[int]]] = [
             [set(range(1, 10)) if self.grid[r][c] == 0 else {self.grid[r][c]}
              for c in range(self.size)]
             for r in range(self.size)
         ]
-        # Precompute neighbors for each cell (same row, same column, same subgrid)
+
         self.neighbors: dict[tuple[int, int], set[tuple[int, int]]] = {}
         for r in range(self.size):
             for c in range(self.size):
                 nbs = set()
-                # Same row
                 for cc in range(self.size):
                     if cc != c:
                         nbs.add((r, cc))
-                # Same column
                 for rr in range(self.size):
                     if rr != r:
                         nbs.add((rr, c))
-                # Same subgrid
                 br = (r // self.subgrid_size) * self.subgrid_size
                 bc = (c // self.subgrid_size) * self.subgrid_size
                 for rr in range(br, br + self.subgrid_size):
@@ -60,15 +43,12 @@ class SudokuBoard:
 
     def is_valid_assignment(self, row: int, col: int, value: int) -> bool:
         """Checks whether placing 'value' at (row, col) conflicts with any assigned value in the same row, column, or subgrid."""
-        # Check row
         for c in range(self.size):
             if self.grid[row][c] == value:
                 return False
-        # Check column
         for r in range(self.size):
             if self.grid[r][col] == value:
                 return False
-        # Check subgrid
         br = (row // self.subgrid_size) * self.subgrid_size
         bc = (col // self.subgrid_size) * self.subgrid_size
         for r in range(br, br + self.subgrid_size):
@@ -101,7 +81,6 @@ def revise(board: SudokuBoard, cell1: tuple[int, int], cell2: tuple[int, int]) -
     r2, c2 = cell2
     revised = False
     to_remove = set()
-    # If cell2's domain is a singleton, then its value cannot appear in cell1.
     if len(board.domains[r2][c2]) == 1:
         value = next(iter(board.domains[r2][c2]))
         for v in board.domains[r1][c1]:
@@ -118,7 +97,6 @@ def ac3(board: SudokuBoard) -> bool:
     Returns False if any domain becomes empty, True otherwise.
     """
     queue = deque()
-    # Initialize the queue with all arcs: (cell, neighbor)
     for r in range(board.size):
         for c in range(board.size):
             for neighbor in board.neighbors[(r, c)]:
@@ -136,7 +114,7 @@ def ac3(board: SudokuBoard) -> bool:
 
 def get_unassigned_variable(board: SudokuBoard) -> tuple[int, int] | None:
     """Selects an unassigned cell using the Minimum Remaining Values (MRV) heuristic."""
-    min_len = 10  # larger than the maximum domain size of 9
+    min_len = 10
     chosen = None
     for r in range(board.size):
         for c in range(board.size):
@@ -176,16 +154,13 @@ def backtrack(board: SudokuBoard) -> bool:
 
     for value in get_sorted_domain_values(board, row, col):
         if board.is_valid_assignment(row, col, value):
-            # Save the current state so we can backtrack later.
             old_grid = copy.deepcopy(board.grid)
             old_domains = copy.deepcopy(board.domains)
 
             board.assign_value(row, col, value)
-            # Inference: enforce AC-3 after the assignment.
             if ac3(board):
                 if backtrack(board):
                     return True
-            # Backtrack: revert to the previous state.
             board.grid = old_grid
             board.domains = old_domains
     return False
