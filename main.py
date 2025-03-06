@@ -60,6 +60,9 @@ class SudokuBoard:
         for r in range(self.size):
             print(" ".join(str(x) for x in self.grid[r]))
 
+
+# CONSTRAINT CHECKING
+# -------------------
 # Check if value assignment is valid
 def is_valid_assignment(board: SudokuBoard, row: int, col: int, value: int) -> bool:
     if np.any(board.grid[row, :] == value):
@@ -84,6 +87,9 @@ def revise(board: SudokuBoard, cell1: tuple[int, int], cell2: tuple[int, int]) -
             revised = True
     return revised
 
+
+# MAIN ALGORITHM
+# --------------
 # use AC3 to prune domains by making sure every value is consistent with neighbors
 def ac3(board: SudokuBoard) -> bool:
     queue = deque()
@@ -102,6 +108,9 @@ def ac3(board: SudokuBoard) -> bool:
                     queue.append((neighbor, cell1))
     return True
 
+
+# HEURISTICS/BACKTRACKING SEARCH
+# ------------------------------
 # Use MRV to pick the next cell (smallest domain)  **heuristic
 def get_unassigned_variable(board: SudokuBoard):
     min_len = 10
@@ -175,6 +184,9 @@ def backtrack(board: SudokuBoard) -> bool:
             board.grid[row, col] = 0
     return False
 
+
+# INPUT/OUTPUT HANDLING
+# ---------------------
 def read_input() -> list[list[int]]:
     grid = []
     for _ in range(9):
