@@ -1,3 +1,11 @@
+'''
+CSC 242 - Intro to AI
+Project 2 - Sudoku
+Christopher DelGuercio (cdelguer@u.rochester.edu)
+Krish Patel (kpatel46@u.rochester.edu
+'''
+
+
 import sys
 import numpy as np
 from collections import deque
@@ -6,35 +14,36 @@ class SudokuBoard:
     def __init__(self, input_grid: list[list[int]]):
         self.size = 9
         self.subgrid_size = 3
-        # Use a NumPy array for fast row/column/subgrid checks
+        # Store the puzzle as a 9x9 NumPy array
         self.grid = np.array(input_grid, dtype=int)
-        # Domains as sets: if cell is 0, full domain; else singleton
+        # Each cell gets a domain if empty or given number.
         self.domains = [
             [set(range(1, 10)) if self.grid[r, c] == 0 else {self.grid[r, c]}
              for c in range(self.size)]
             for r in range(self.size)
         ]
-        # Precompute neighbors as tuples (faster iteration than sets)
+
+        # Precompute the neighbors for each cell
         self.neighbors = {}
         for r in range(self.size):
             for c in range(self.size):
                 nbs = set()
-                # Same row
+                # All cells in the same row
                 for cc in range(self.size):
                     if cc != c:
                         nbs.add((r, cc))
-                # Same column
+                # All cells in the same column
                 for rr in range(self.size):
                     if rr != r:
                         nbs.add((rr, c))
-                # Same subgrid
+                # All cells in the same 3x3 subgrid
                 br = (r // self.subgrid_size) * self.subgrid_size
                 bc = (c // self.subgrid_size) * self.subgrid_size
                 for rr in range(br, br + self.subgrid_size):
                     for cc in range(bc, bc + self.subgrid_size):
                         if (rr, cc) != (r, c):
                             nbs.add((rr, cc))
-                self.neighbors[(r, c)] = tuple(nbs)  # convert to tuple
+                self.neighbors[(r, c)] = tuple(nbs)
 
     def is_complete(self):
         return not np.any(self.grid == 0)
@@ -51,6 +60,7 @@ class SudokuBoard:
         for r in range(self.size):
             print(" ".join(str(x) for x in self.grid[r]))
 
+# Check if value assignment is valid
 def is_valid_assignment(board: SudokuBoard, row: int, col: int, value: int) -> bool:
     if np.any(board.grid[row, :] == value):
         return False
@@ -62,6 +72,7 @@ def is_valid_assignment(board: SudokuBoard, row: int, col: int, value: int) -> b
         return False
     return True
 
+# Remove from cell1 domain any value that cell2 already has
 def revise(board: SudokuBoard, cell1: tuple[int, int], cell2: tuple[int, int]) -> bool:
     r1, c1 = cell1
     r2, c2 = cell2
@@ -73,6 +84,7 @@ def revise(board: SudokuBoard, cell1: tuple[int, int], cell2: tuple[int, int]) -
             revised = True
     return revised
 
+# use AC3 to prune domains by making sure every value is consistent with neighbors.
 def ac3(board: SudokuBoard) -> bool:
     queue = deque()
     for r in range(board.size):
@@ -90,6 +102,7 @@ def ac3(board: SudokuBoard) -> bool:
                     queue.append((neighbor, cell1))
     return True
 
+# Use MRV to pick the next cell (smallest domain)
 def get_unassigned_variable(board: SudokuBoard):
     min_len = 10
     chosen = None
@@ -102,6 +115,7 @@ def get_unassigned_variable(board: SudokuBoard):
                     chosen = (r, c)
     return chosen
 
+# Order possible values for a cell using LCV
 def get_sorted_domain_values(board: SudokuBoard, row: int, col: int) -> list[int]:
     values = list(board.domains[row][col])
     nbs = board.neighbors[(row, col)]
@@ -113,6 +127,7 @@ def get_sorted_domain_values(board: SudokuBoard, row: int, col: int) -> list[int
         return cnt
     return sorted(values, key=count_conflicts)
 
+# After assigning value only update the neighbors that might be affected
 def incremental_propagate(board: SudokuBoard, start_cell: tuple[int, int]) -> (bool, dict):
     removed = {}
     queue = deque()
@@ -134,10 +149,12 @@ def incremental_propagate(board: SudokuBoard, start_cell: tuple[int, int]) -> (b
                         queue.append((neighbor, cell1))
     return True, removed
 
+# If a branch fails revert changes
 def restore_domains(board: SudokuBoard, removed: dict):
     for (r, c), vals in removed.items():
         board.domains[r][c].update(vals)
 
+# Backtracking search with MRV, LCV, and incremental propagation
 def backtrack(board: SudokuBoard) -> bool:
     if board.is_complete():
         return True
