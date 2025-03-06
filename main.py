@@ -12,6 +12,7 @@ from collections import deque
 ## each bit represents a number from 1-9 which we will utilize when assigning the domain of each cell
 FULL_DOMAIN = (1 << 9) - 1
 
+
 def bit_to_values(mask: int) -> list[int]:
     """
         This method converts the bitmask into a list of numbers that are represented by the bits
@@ -25,22 +26,22 @@ def bit_to_values(mask: int) -> list[int]:
     """
     return [i + 1 for i in range(9) if mask & (1 << i)]
 
+
 class SudokuBoard:
     def __init__(self, input_grid: list[list[int]]):
         self.size = 9
         self.subgrid_size = 3
         self.grid = [row[:] for row in input_grid]
 
-        #the domain is represented by a bitmask where each bit represents a number from 1-9
-        # if cell is empty then we go with teh full_domain (111111111)
+        # the domain is represented by a bitmask where each bit represents a number from 1-9
+        # if cell is empty then we go with the full_domain (111111111)
         self.domains = [
             [FULL_DOMAIN if self.grid[r][c] == 0 else (1 << (self.grid[r][c] - 1))
-            for c in range(self.size)]
+             for c in range(self.size)]
             for r in range(self.size)
         ]
 
-        # Precompute neighbors for each cell (all cells in the same row, column, and 3x3 subgrid).
-        #We precompute all of the neighbors for each cell in the grid
+        # We precompute all neighbors for each cell in the grid
         self.neighbors = {}
         for row in range(self.size):
             for col in range(self.size):
@@ -64,11 +65,11 @@ class SudokuBoard:
 
     def is_complete(self) -> bool:
         """
-            This method jsut checks if the entire grid is filled in -- no zeros remaining
+            This method just checks if the entire grid is filled in -- no zeros remaining
 
             params:
                 None
-            
+
             returns:
                 bool - True if the grid is completely filled in, False otherwise
         """
@@ -76,13 +77,13 @@ class SudokuBoard:
 
     def assign_value(self, row: int, col: int, value: int):
         """
-            This mehtod assigns a val to the specified cell in the grid and updates the relavent domains
+            This method assigns a val to the specified cell in the grid and updates the relavent domains
 
             params:
                 row: int - the row of the cell we want to assign a value to
                 col: int - the column of the cell we want to assign a value to
                 value: int - the value we want to assign to the cell
-            
+
             returns:
                 None
         """
@@ -91,7 +92,7 @@ class SudokuBoard:
 
     def remove_value(self, row: int, col: int):
         """
-            This method removes a valuye from the specified cell in the grid and updates the relavent domains
+            This method removes a value from the specified cell in the grid and updates the relavent domains
 
             params:
                 row: int - the row of the cell we want to remove a value from
@@ -110,10 +111,11 @@ class SudokuBoard:
         for row in self.grid:
             print(" ".join(str(x) for x in row))
 
+
 def is_valid_assignment(board: SudokuBoard, row: int, col: int, value: int) -> bool:
     """
         This method checks if assigning a value to a cell is valid
-        by only usingthe precomputed neighbors
+        by only using the precomputed neighbors
 
         params:
             board: SudokuBoard - the board we are working with
@@ -128,6 +130,7 @@ def is_valid_assignment(board: SudokuBoard, row: int, col: int, value: int) -> b
         if board.grid[r][c] == value:
             return False
     return True
+
 
 # AC3 revise: if cell2 is assigned (its domain is a single bit), remove that bit from cell1’s domain.
 def revise(board: SudokuBoard, cell1: tuple[int, int], cell2: tuple[int, int]) -> bool:
@@ -149,12 +152,13 @@ def revise(board: SudokuBoard, cell1: tuple[int, int], cell2: tuple[int, int]) -
     domain2 = board.domains[row2][col2]
 
     # we can check if dom2 is a singleton by checking if the bitwise AND of dom2 and dom2 - 1 is 0
-    # this should owrk because if dom2 is a power of 2, then it will only have one bit set to 1
+    # this should work because if dom2 is a power of 2, then it will only have one bit set to 1
     if domain2 and (domain2 & (domain2 - 1)) == 0:
         if board.domains[row1][col1] & domain2:
             board.domains[row1][col1] &= ~domain2
             revised = True
     return revised
+
 
 def ac3(board: SudokuBoard) -> bool:
     """
@@ -166,7 +170,7 @@ def ac3(board: SudokuBoard) -> bool:
             board: SudokuBoard - the board we are working with
 
         returns:
-            bool - True if the puzzle is solvable, False otherwise
+            bool - True if the puzzle is solvable, false otherwise
     """
     queue = deque()
     for row in range(board.size):
@@ -183,6 +187,7 @@ def ac3(board: SudokuBoard) -> bool:
                 if neighbor != cell2:
                     queue.append((neighbor, cell1))
     return True
+
 
 def incremental_propagate(board: SudokuBoard, start_cell: tuple[int, int]) -> (bool, dict):
     """
@@ -212,19 +217,21 @@ def incremental_propagate(board: SudokuBoard, start_cell: tuple[int, int]) -> (b
                     queue.append((nr, nc))
     return True, saved
 
+
 def restore_domains(board: SudokuBoard, saved: dict):
     """
         this method assists in restoring the last saved domains and grid values
-        in essence, revert to the last state that was posible
+        in essence, revert to the last state that was possible
     """
     for (r, c), (old_domain, old_grid) in saved.items():
         board.domains[r][c] = old_domain
         board.grid[r][c] = old_grid
 
+
 def get_unassigned_variable(board: SudokuBoard):
     """
-        this method gets the next unassigned variable in the grid using the minimum remaining vlaue
-        heuristic--whcih cell has the fewest remaining values in its domain
+        this method gets the next unassigned variable in the grid using the minimum remaining val
+        heuristic--which cell has the fewest remaining values in its domain
     """
     min_count = 10
     chosen = None
@@ -237,6 +244,7 @@ def get_unassigned_variable(board: SudokuBoard):
                     chosen = (row, col)
     return chosen
 
+
 def get_sorted_domain_values(board: SudokuBoard, row: int, col: int) -> list[int]:
     """
         this method is helps with evaluating the least constraining value heuristic
@@ -246,15 +254,18 @@ def get_sorted_domain_values(board: SudokuBoard, row: int, col: int) -> list[int
     mask = board.domains[row][col]
     values = bit_to_values(mask)
     nbs = board.neighbors[(row, col)]
+
     def count_conflicts(val: int) -> int:
         bit = 1 << (val - 1)
         return sum(1 for (r, c) in nbs if board.domains[r][c] & bit)
+
     return sorted(values, key=count_conflicts)
+
 
 # Backtracking search with MRV, LCV, and incremental propagation.
 def backtrack(board: SudokuBoard) -> bool:
     """
-        this method links together the usage of the mrv, lcv and incremental propogation methods.
+        this method links together the usage of the MRV, LCV and incremental propogation methods.
         It uses a recursive backtracking algorithm by assigning values
         to the cells and checking if the assignment is valid. If it is, it will continue assigning
         values to the next cell and so on. If it reaches a point where it cannot assign a value to a cell
@@ -280,6 +291,7 @@ def backtrack(board: SudokuBoard) -> bool:
             board.grid[row][col] = orig_grid_val
     return False
 
+
 def read_input() -> list[list[int]]:
     """
         input stuff
@@ -292,9 +304,11 @@ def read_input() -> list[list[int]]:
         grid.append(list(map(int, line.split())))
     return grid
 
+
 def write_output(board: SudokuBoard) -> None:
     """
-        this method writes the output of the sudoku puzzle to the console
+        this method writes the output of the sudoku puzzle to the console or prints No solution
+        if the puzzle is not solvable.
 
         params:
             board: SudokuBoard - the board we are working with
@@ -307,7 +321,8 @@ def write_output(board: SudokuBoard) -> None:
     else:
         print("No solution.")
 
-def driver():
+
+def main():
     grid = read_input()
     board = SudokuBoard(grid)
     if not ac3(board):
@@ -318,5 +333,6 @@ def driver():
         return
     write_output(board)
 
+
 if __name__ == '__main__':
-    driver()
+    main()
