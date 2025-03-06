@@ -1,9 +1,9 @@
-'''
+"""
 CSC 242 - Intro to AI
 Project 2 - Sudoku
 Christopher DelGuercio (cdelguer@u.rochester.edu)
 Krish Patel (kpatel46@u.rochester.edu
-'''
+"""
 
 
 import sys
@@ -14,12 +14,12 @@ class SudokuBoard:
     def __init__(self, input_grid: list[list[int]]):
         self.size = 9
         self.subgrid_size = 3
-        # Store the puzzle as a 9x9 NumPy array
+        # Stores the puzzle as a Numpy array
         self.grid = np.array(input_grid, dtype=int)
         # Each cell gets a domain if empty or given number.
         self.domains = [
             [set(range(1, 10)) if self.grid[r, c] == 0 else {self.grid[r, c]}
-             for c in range(self.size)]
+            for c in range(self.size)]
             for r in range(self.size)
         ]
 
@@ -36,7 +36,7 @@ class SudokuBoard:
                 for rr in range(self.size):
                     if rr != r:
                         nbs.add((rr, c))
-                # All cells in the same 3x3 subgrid
+                # All cells in the same subgrid
                 br = (r // self.subgrid_size) * self.subgrid_size
                 bc = (c // self.subgrid_size) * self.subgrid_size
                 for rr in range(br, br + self.subgrid_size):
@@ -84,7 +84,7 @@ def revise(board: SudokuBoard, cell1: tuple[int, int], cell2: tuple[int, int]) -
             revised = True
     return revised
 
-# use AC3 to prune domains by making sure every value is consistent with neighbors.
+# use AC3 to prune domains by making sure every value is consistent with neighbors
 def ac3(board: SudokuBoard) -> bool:
     queue = deque()
     for r in range(board.size):
@@ -102,7 +102,7 @@ def ac3(board: SudokuBoard) -> bool:
                     queue.append((neighbor, cell1))
     return True
 
-# Use MRV to pick the next cell (smallest domain)
+# Use MRV to pick the next cell (smallest domain)  **heuristic
 def get_unassigned_variable(board: SudokuBoard):
     min_len = 10
     chosen = None
@@ -115,7 +115,7 @@ def get_unassigned_variable(board: SudokuBoard):
                     chosen = (r, c)
     return chosen
 
-# Order possible values for a cell using LCV
+# Order possible values for a cell using LCV  **heuristic
 def get_sorted_domain_values(board: SudokuBoard, row: int, col: int) -> list[int]:
     values = list(board.domains[row][col])
     nbs = board.neighbors[(row, col)]
@@ -127,7 +127,7 @@ def get_sorted_domain_values(board: SudokuBoard, row: int, col: int) -> list[int
         return cnt
     return sorted(values, key=count_conflicts)
 
-# After assigning value only update the neighbors that might be affected
+# After assigning value only update the neighbors that might be affected... **runtime optimization
 def incremental_propagate(board: SudokuBoard, start_cell: tuple[int, int]) -> (bool, dict):
     removed = {}
     queue = deque()
