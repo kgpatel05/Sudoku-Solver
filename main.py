@@ -36,32 +36,36 @@ class SudokuBoard:
         # the domain is represented by a bitmask where each bit represents a number from 1-9
         # if cell is empty then we go with the full_domain (111111111)
         self.domains = [
-            [FULL_DOMAIN if self.grid[r][c] == 0 else (1 << (self.grid[r][c] - 1))
-             for c in range(self.size)]
-            for r in range(self.size)
+            [FULL_DOMAIN if self.grid[row_index][col_index] == 0 else (1 << (self.grid[row_index][col_index] - 1))
+            for col_index in range(self.size)]
+            for row_index in range(self.size)
         ]
 
-        # We precompute all neighbors for each cell in the grid
+        # Precompute all neighbors for each cell in the grid
         self.neighbors = {}
-        for row in range(self.size):
-            for col in range(self.size):
-                neighbors = set()
+        for row_index in range(self.size):
+            for col_index in range(self.size):
+                neighbor_cells = set()
+
                 # Rows
-                for column in range(self.size):
-                    if column != col:
-                        neighbors.add((row, column))
+                for other_col in range(self.size):
+                    if other_col != col_index:
+                        neighbor_cells.add((row_index, other_col))
+
                 # Columns
-                for row_ in range(self.size):
-                    if row_ != row:
-                        neighbors.add((row_, col))
+                for other_row in range(self.size):
+                    if other_row != row_index:
+                        neighbor_cells.add((other_row, col_index))
+
                 # Subgrid
-                br = (row // self.subgrid_size) * self.subgrid_size
-                bc = (col // self.subgrid_size) * self.subgrid_size
-                for row_ in range(br, br + self.subgrid_size):
-                    for column in range(bc, bc + self.subgrid_size):
-                        if (row_, column) != (row, col):
-                            neighbors.add((row_, column))
-                self.neighbors[(row, col)] = tuple(neighbors)
+                subgrid_row = (row_index // self.subgrid_size) * self.subgrid_size
+                subgrid_col = (col_index // self.subgrid_size) * self.subgrid_size
+                for sub_row in range(subgrid_row, subgrid_row + self.subgrid_size):
+                    for other_col in range(subgrid_col, subgrid_col + self.subgrid_size):
+                        if (sub_row, other_col) != (row_index, col_index):
+                            neighbor_cells.add((sub_row, other_col))
+
+                self.neighbors[(row_index, col_index)] = tuple(neighbor_cells)
 
     def is_complete(self) -> bool:
         """
@@ -73,7 +77,7 @@ class SudokuBoard:
             returns:
                 bool - True if the grid is completely filled in, False otherwise
         """
-        return all(self.grid[row][col] != 0 for row in range(self.size) for col in range(self.size))
+        return all(self.grid[row_index][col_index] != 0 for row_index in range(self.size) for col_index in range(self.size))
 
     def assign_value(self, row: int, col: int, value: int):
         """
@@ -108,8 +112,8 @@ class SudokuBoard:
         """
             this method simply prints out the grid
         """
-        for row in self.grid:
-            print(" ".join(str(x) for x in row))
+        for board_row in self.grid:
+            print(" ".join(str(num) for num in board_row))
 
 
 def is_valid_assignment(board: SudokuBoard, row: int, col: int, value: int) -> bool:
@@ -126,13 +130,13 @@ def is_valid_assignment(board: SudokuBoard, row: int, col: int, value: int) -> b
         returns:
             bool - True if the assignment is valid, False otherwise
     """
-    for (r, c) in board.neighbors[(row, col)]:
-        if board.grid[r][c] == value:
+    for (neighbor_row, neighbor_col) in board.neighbors[(row, col)]:
+        if board.grid[neighbor_row][neighbor_col] == value:
             return False
     return True
 
 
-# AC3 revise: if cell2 is assigned (its domain is a single bit), remove that bit from cell1’s domain.
+# AC3 revise: if cell2 has a value already, remove that bit from cell1’s domain.
 def revise(board: SudokuBoard, cell1: tuple[int, int], cell2: tuple[int, int]) -> bool:
     """
         this method checks if the domain of 'cell2' is just one number (single bit)
@@ -172,20 +176,21 @@ def ac3(board: SudokuBoard) -> bool:
         returns:
             bool - True if the puzzle is solvable, false otherwise
     """
-    queue = deque()
+    arc_queue = deque()
     for row in range(board.size):
         for col in range(board.size):
-            for neighbor in board.neighbors[(row, col)]:
-                queue.append(((row, col), neighbor))
-    while queue:
-        cell1, cell2 = queue.popleft()
-        if revise(board, cell1, cell2):
-            row, col = cell1
-            if board.domains[row][col] == 0:
+            for neighbor_cell in board.neighbors[(row, col)]:
+                arc_queue.append(((row, col), neighbor_cell))
+    while arc_queue:
+        current_arc = arc_queue.popleft()
+        current_cell, compared_cell = current_arc
+        if revise(board, current_cell, compared_cell):
+            current_row, current_col = current_cell
+            if board.domains[current_row][current_col] == 0:
                 return False
-            for neighbor in board.neighbors[(row, col)]:
-                if neighbor != cell2:
-                    queue.append((neighbor, cell1))
+            for neighbor_cell in board.neighbors[(current_row, current_col)]:
+                if neighbor_cell != compared_cell:
+                    arc_queue.append((current_cell, neighbor_cell))
     return True
 
 
@@ -198,23 +203,24 @@ def incremental_propagate(board: SudokuBoard, start_cell: tuple[int, int]) -> (b
     """
     # saved: maps cell -> (old_domain, old_grid)
     saved = {}
-    queue = deque([start_cell])
-    while queue:
-        r, c = queue.popleft()
-        assigned_mask = board.domains[r][c]
-        # Propagate the fact that (r,c) is assigned.
-        for nr, nc in board.neighbors[(r, c)]:
-            if board.domains[nr][nc] & assigned_mask:
-                if (nr, nc) not in saved:
-                    saved[(nr, nc)] = (board.domains[nr][nc], board.grid[nr][nc])
-                board.domains[nr][nc] &= ~assigned_mask
-                if board.domains[nr][nc] == 0:
+    prop_queue = deque([start_cell])
+    while prop_queue:
+        current_row, current_col = prop_queue.popleft()
+        assigned_mask = board.domains[current_row][current_col]
+        # Propagate the fact that (current_row,current_col) is assigned.
+        for neighbor in board.neighbors[(current_row, current_col)]:
+            neighbor_row, neighbor_col = neighbor
+            if board.domains[neighbor_row][neighbor_col] & assigned_mask:
+                if neighbor not in saved:
+                    saved[neighbor] = (board.domains[neighbor_row][neighbor_col], board.grid[neighbor_row][neighbor_col])
+                board.domains[neighbor_row][neighbor_col] &= ~assigned_mask
+                if board.domains[neighbor_row][neighbor_col] == 0:
                     return False, saved
-                # If this neighbor becomes singleton and is not yet assigned, assign and propagate.
-                if board.domains[nr][nc].bit_count() == 1 and board.grid[nr][nc] == 0:
-                    val = board.domains[nr][nc].bit_length()  # For power-of-two, bit_length() gives the value.
-                    board.grid[nr][nc] = val
-                    queue.append((nr, nc))
+                # If this neighbor becomes singleton and is not yet assigned, assign it.
+                if board.domains[neighbor_row][neighbor_col].bit_count() == 1 and board.grid[neighbor_row][neighbor_col] == 0:
+                    val = board.domains[neighbor_row][neighbor_col].bit_length()  # For power-of-two, bit_length() gives value.
+                    board.grid[neighbor_row][neighbor_col] = val
+                    prop_queue.append((neighbor_row, neighbor_col))
     return True, saved
 
 
@@ -223,9 +229,9 @@ def restore_domains(board: SudokuBoard, saved: dict):
         this method assists in restoring the last saved domains and grid values
         in essence, revert to the last state that was possible
     """
-    for (r, c), (old_domain, old_grid) in saved.items():
-        board.domains[r][c] = old_domain
-        board.grid[r][c] = old_grid
+    for (row, col), (old_domain, old_grid) in saved.items():
+        board.domains[row][col] = old_domain
+        board.grid[row][col] = old_grid
 
 
 def get_unassigned_variable(board: SudokuBoard):
@@ -253,13 +259,7 @@ def get_sorted_domain_values(board: SudokuBoard, row: int, col: int) -> list[int
     """
     mask = board.domains[row][col]
     values = bit_to_values(mask)
-    nbs = board.neighbors[(row, col)]
-
-    def count_conflicts(val: int) -> int:
-        bit = 1 << (val - 1)
-        return sum(1 for (r, c) in nbs if board.domains[r][c] & bit)
-
-    return sorted(values, key=count_conflicts)
+    return sorted(values)
 
 
 # Backtracking search with MRV, LCV, and incremental propagation.
@@ -273,22 +273,22 @@ def backtrack(board: SudokuBoard) -> bool:
     """
     if board.is_complete():
         return True
-    var = get_unassigned_variable(board)
-    if var is None:
+    chosen_cell = get_unassigned_variable(board)
+    if chosen_cell is None:
         return False
-    row, col = var
-    sorted_vals = get_sorted_domain_values(board, row, col)
-    orig_domain = board.domains[row][col]
-    orig_grid_val = board.grid[row][col]
-    for val in sorted_vals:
-        if is_valid_assignment(board, row, col, val):
-            board.assign_value(row, col, val)
-            success, saved = incremental_propagate(board, (row, col))
-            if success and backtrack(board):
+    current_row, current_col = chosen_cell
+    possible_values = get_sorted_domain_values(board, current_row, current_col)
+    original_domain = board.domains[current_row][current_col]
+    original_grid_value = board.grid[current_row][current_col]
+    for candidateValue in possible_values:
+        if is_valid_assignment(board, current_row, current_col, candidateValue):
+            board.assign_value(current_row, current_col, candidateValue)
+            prop_success, changes_saved = incremental_propagate(board, (current_row, current_col))
+            if prop_success and backtrack(board):
                 return True
-            restore_domains(board, saved)
-            board.domains[row][col] = orig_domain
-            board.grid[row][col] = orig_grid_val
+            restore_domains(board, changes_saved)
+            board.domains[current_row][current_col] = original_domain
+            board.grid[current_row][current_col] = original_grid_value
     return False
 
 
@@ -325,13 +325,9 @@ def write_output(board: SudokuBoard) -> None:
 def main():
     grid = read_input()
     board = SudokuBoard(grid)
-    if not ac3(board):
-        print("No solution.")
-        return
-    if not backtrack(board):
-        print("No solution.")
-        return
-    write_output(board)
+    solution_found = ac3(board) and backtrack(board)
+    if solution_found:
+        write_output(board)
 
 
 if __name__ == '__main__':
